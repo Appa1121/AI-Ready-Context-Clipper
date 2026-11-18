@@ -223,21 +223,51 @@ export async function addClip(clip) {
 }
 
 /**
+ * Clone a validated command and its payload so caller mutations after dispatch
+ * cannot alter the queued operation.
+ * @param {import('../shared/contracts.js').Command} command Validated v1 command.
+ * @returns {import('../shared/contracts.js').Command} Isolated command snapshot.
+ */
+function snapshotCommand(command) {
+  let payload;
+  switch (command.type) {
+    case COMMAND_TYPES.DELETE_CLIP:
+      payload = { id: command.payload.id };
+      break;
+    case COMMAND_TYPES.CLEAR_CLIPS:
+      payload = {};
+      break;
+    case COMMAND_TYPES.UPDATE_SETTINGS:
+      payload = {
+        promptPrefix: command.payload.promptPrefix,
+        promptSuffix: command.payload.promptSuffix,
+      };
+      break;
+    default:
+      throw new ContractError(ERROR_CODES.INVALID_REQUEST, 'Invalid command.');
+  }
+  return {
+    protocolVersion: command.protocolVersion,
+    requestId: command.requestId,
+    type: command.type,
+    expectedRevision: command.expectedRevision,
+    payload,
+  };
+}
+
+/**
  * Apply an authenticated UI mutation command against the latest stored state inside the serial queue.
- * Enforces expectedRevision equality and preserves prior state on validation, conflict, or storage error.
+ * Checks all preconditions before any write so rejected commands leave absent or prior state untouched.
  * @param {import('../shared/contracts.js').Command} command Validated or raw UI command envelope.
  * @returns {Promise<import('../shared/contracts.js').AppState>} Persisted AppState after commit.
  * @throws {ContractError} INVALID_REQUEST, CONFLICT, NOT_FOUND, QUOTA_EXCEEDED, STORAGE_ERROR, or UNSUPPORTED_SCHEMA.
  */
 export async function applyCommand(command) {
-  const validCommand = validateCommand(command);
+  const validCommand = snapshotCommand(validateCommand(command));
 
   return enqueue(async () => {
     const storage = getStorageArea();
-    const { exists, state } = await readValidatedOrDefault(storage);
-    if (!exists) {
-      await writeStorageEntry(storage, state);
-    }
+    const { state } = await readValidatedOrDefault(storage);
 
     if (validCommand.expectedRevision !== state.revision) {
       throw new ContractError(ERROR_CODES.CONFLICT, 'State revision mismatch. Reload and try again.');

@@ -1,21 +1,9 @@
 import { ContractError, ERROR_CODES, isClip } from '../shared/contracts.js';
 
-const REJECTED_URL_PROTOCOLS = new Set([
-  'chrome-extension:',
-  'chrome:',
-  'chrome-untrusted:',
-  'devtools:',
-  'edge:',
-  'about:',
-  'javascript:',
-  'data:',
-  'blob:',
-  'vbscript:',
-]);
-
 /**
  * Check whether a candidate document URL is usable under Contract v1.
- * Rejects blank values, malformed URLs, and internal/script viewer schemes.
+ * Rejects blank values, malformed URLs, and internal chrome-extension: viewer URLs,
+ * while preserving valid document URLs (including https:, http:, file:, blob:) as inert data.
  * @param {unknown} candidate Raw URL candidate from click info or tab metadata.
  * @returns {string} Preserved usable URL, or an empty string if unusable.
  */
@@ -29,7 +17,7 @@ function pickUsableUrl(candidate) {
   } catch {
     return '';
   }
-  if (REJECTED_URL_PROTOCOLS.has(parsed.protocol.toLowerCase())) {
+  if (parsed.protocol.toLowerCase() === 'chrome-extension:') {
     return '';
   }
   return trimmed;

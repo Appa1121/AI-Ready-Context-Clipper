@@ -74,6 +74,31 @@ test('createClip rejects internal chrome-extension viewer URLs and falls back to
   );
   assert.equal(fromLocalPdf.url, 'file:///C:/synthetic/local-sample.pdf');
   assert.equal(fromLocalPdf.title, 'file:///C:/synthetic/local-sample.pdf');
+  const fromBlobPdfFallback = createClip(
+    {
+      selectionText: 'Blob PDF paragraph',
+      pageUrl: 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html',
+    },
+    {
+      title: 'Generated Report.pdf',
+      url: 'blob:https://example.com/550e8400-e29b-41d4-a716-446655440000',
+    }
+  );
+  assert.equal(fromBlobPdfFallback.url, 'blob:https://example.com/550e8400-e29b-41d4-a716-446655440000');
+  assert.equal(fromBlobPdfFallback.title, 'Generated Report.pdf');
+
+  const fromMatchingBlob = createClip(
+    {
+      selectionText: 'Blob PDF direct',
+      pageUrl: 'blob:https://example.com/550e8400-e29b-41d4-a716-446655440000',
+    },
+    {
+      title: '',
+      url: 'blob:https://example.com/550e8400-e29b-41d4-a716-446655440000',
+    }
+  );
+  assert.equal(fromMatchingBlob.url, 'blob:https://example.com/550e8400-e29b-41d4-a716-446655440000');
+  assert.equal(fromMatchingBlob.title, 'blob:https://example.com/550e8400-e29b-41d4-a716-446655440000');
 });
 
 test('createClip ignores linkUrl/frameUrl, handles unusable URLs, and falls back title to URL or Untitled', () => {
@@ -101,7 +126,7 @@ test('createClip ignores linkUrl/frameUrl, handles unusable URLs, and falls back
     },
     {
       title: '   ',
-      url: 'about:blank',
+      url: 'not-a-valid-url',
     }
   );
   assert.equal(untitledClip.url, '');

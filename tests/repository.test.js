@@ -241,3 +241,55 @@ test('worker restart simulation reads persisted state from storage and continues
   assert.equal(updated.revision, 2);
   assert.deepEqual(updated.clips.map((c) => c.id), [UUID_1, UUID_2]);
 });
+
+test('rejected commands and failed first capture on absent storage perform zero net writes', async () => {
+  const storage = createMockStorage();
+  const repo = await loadFreshRepository(storage);
+
+  // CONFLICT on absent storage must not initialize or write storage
+  await assert.rejects(
+    () => repo.applyCommand(makeCmd(UUID_4, 'CLEAR_CLIPS', 1, {})),
+    hasCode('CONFLICT')
+  );
+  assert.equal(storage.getStats().setCalls, 0);
+  assert.equal(storage.peek(), undefined);
+
+  // NOT_FOUND on absent storage (expectedRevision 0) must not initialize or write storage
+  await assert.rejects(
+    () => repo.applyCommand(makeCmd(UUID_4, 'DELETE_CLIP', 0, { id: UUID_1 })),
+    hasCode('NOT_FOUND')
+  );
+  assert.equal(storage.getStats().setCalls, 0);
+  assert.equal(storage.peek(), undefined);
+
+  // Failed first capture on absent storage leaves storage absent
+  storage.failNextSet(new Error('QUOTA_BYTES quota exceeded'));
+  await assert.rejects(() => repo.addClip(makeClip(UUID_1, 'Too big')), hasCode('QUOTA_EXCEEDED'));
+  assert.equal(storage.peek(), undefined);
+});
+
+test('queued command snapshot resists caller mutation while an earlier operation is in flight', async () => {
+  const storage = createMockStorage();
+  storage.setDelay(15);
+  const repo = await loadFreshRepository(storage);
+
+  const pendingAdd = repo.addClip(makeClip(UUID_1, 'First clip'));
+  const mutableCmd = makeCmd(UUID_4, 'UPDATE_SETTINGS', 1, {
+    promptPrefix: 'Committed Prefix',
+    promptSuffix: 'Committed Suffix',
+  });
+  const pendingCmd = repo.applyCommand(mutableCmd);
+
+  // Mutate caller command object immediately after dispatching while queue is still busy
+  mutableCmd.expectedRevision = 999;
+  mutableCmd.payload.promptPrefix = 'TAMPERED_PREFIX';
+  mutableCmd.payload.promptSuffix = 'TAMPERED_SUFFIX';
+
+  await pendingAdd;
+  const result = await pendingCmd;
+  assert.equal(result.revision, 2);
+  assert.deepEqual(result.settings, {
+    promptPrefix: 'Committed Prefix',
+    promptSuffix: 'Committed Suffix',
+  });
+});

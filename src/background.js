@@ -20,6 +20,13 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 let menuSetupTail = Promise.resolve();
 
 /**
+ * Monotonic capture sequence counter and serial queue ensuring toolbar badge/title
+ * reflect only the most recent capture attempt.
+ */
+let latestCaptureSeq = 0;
+let feedbackTail = Promise.resolve();
+
+/**
  * Invoke a Chrome callback-style API cleanly as a Promise, checking runtime.lastError.
  * @param {(done: () => void) => void} invoke Callback-accepting Chrome API wrapper.
  * @returns {Promise<void>} Resolves on success or rejects with Error on runtime.lastError.
@@ -184,26 +191,46 @@ async function handleStartup() {
 }
 
 /**
+ * Queue toolbar badge and title feedback while ignoring stale outcomes superseded by newer clicks.
+ * @param {number} captureSeq Sequence number assigned synchronously when the click arrived.
+ * @param {string} badgeText Badge text ('' to clear, '!' on capture error).
+ * @param {string} title Sanitized action title.
+ * @returns {Promise<void>} Resolves after the feedback step settles.
+ */
+function scheduleActionFeedback(captureSeq, badgeText, title) {
+  const run = feedbackTail.then(async () => {
+    if (captureSeq !== latestCaptureSeq) return;
+    await setActionFeedback(badgeText, title);
+  });
+  feedbackTail = run.catch(() => {
+    console.error('AI Clipper: could not update action indicator.');
+  });
+  return feedbackTail;
+}
+
+/**
  * Handle context menu click events to capture selected text without auto-opening the panel.
  * @param {chrome.contextMenus.OnClickData} info Context menu click metadata.
  * @param {chrome.tabs.Tab|undefined} tab Source tab metadata.
- * @returns {Promise<void>} Resolves after persistence and badge update settle.
+ * @returns {Promise<void>} Resolves after persistence and latest-click badge update settle.
  */
 async function handleContextMenuClick(info, tab) {
   if (info?.menuItemId !== CONTEXT_MENU_ID) return;
+  const captureSeq = ++latestCaptureSeq;
   try {
     const clip = createClip(info, tab);
     await addClip(clip);
-    await setActionFeedback('', DEFAULT_ACTION_TITLE);
+    await scheduleActionFeedback(captureSeq, '', DEFAULT_ACTION_TITLE);
   } catch (error) {
     const code = error instanceof ContractError ? error.code : ERROR_CODES.INTERNAL_ERROR;
     console.error(`AI Clipper: capture failed (${code}).`);
-    await setActionFeedback('!', sanitizeActionTitle(error));
+    await scheduleActionFeedback(captureSeq, '!', sanitizeActionTitle(error));
   }
 }
 
 /**
  * Safely deliver a response envelope when the messaging channel is still open.
+ * Logs a sanitized diagnostic without retrying or duplicating mutations if delivery throws.
  * @param {(response: import('./shared/contracts.js').Response) => void} sendResponse Chrome callback.
  * @param {import('./shared/contracts.js').Response} response Contract v1 response envelope.
  * @returns {void}
@@ -212,7 +239,7 @@ function deliverResponse(sendResponse, response) {
   try {
     sendResponse(response);
   } catch {
-    // Message channel already closed before response delivery.
+    console.error('AI Clipper: could not deliver command response.');
   }
 }
 

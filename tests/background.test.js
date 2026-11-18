@@ -122,6 +122,20 @@ function createMockChrome(options = {}) {
     wasSidePanelOpened: () => sidePanelOpened,
     peekState: () => (store.has(STORAGE_KEY) ? structuredClone(store.get(STORAGE_KEY)) : undefined),
     setNextStorageError: (err) => { failStorageSet = err; },
+    deferNextStorageSet: () => {
+      let release;
+      let markStarted;
+      const started = new Promise((r) => { markStarted = r; });
+      const promise = new Promise((r) => { release = r; });
+      const origSet = chrome.storage.local.set;
+      chrome.storage.local.set = async (items) => {
+        chrome.storage.local.set = origSet;
+        markStarted();
+        await promise;
+        return origSet(items);
+      };
+      return { started, release };
+    },
   };
 }
 
@@ -322,5 +336,67 @@ test('runtime.onMessage authenticates sender, avoids reflecting bad requestIds, 
     assert.equal(resp6.ok, false);
     assert.equal(resp6.requestId, UUID_1);
     assert.equal(resp6.error.code, 'CONFLICT');
+  });
+});
+
+test('overlapping captures preserve toolbar feedback for the most recent click', async () => {
+  const env = await bootWorker();
+  await env.withCapturedConsole(async () => {
+    await env.listeners.onInstalled();
+
+    const gate = env.deferNextStorageSet();
+    const firstCapture = env.listeners.onContextMenuClicked(
+      { menuItemId: 'save-to-ai-clipper', selectionText: 'First valid clip', pageUrl: 'https://example.com/1' },
+      { title: 'First', url: 'https://example.com/1' }
+    );
+    await gate.started;
+
+    // Newer click arrives and fails synchronously while the first write is still deferred
+    await env.listeners.onContextMenuClicked(
+      { menuItemId: 'save-to-ai-clipper', selectionText: '   ', pageUrl: 'https://example.com/2' },
+      { title: 'Blank', url: 'https://example.com/2' }
+    );
+    assert.equal(env.badgeCalls.at(-1), '!');
+
+    // Now release the older delayed successful write; it must NOT clear the newer failure badge
+    gate.release();
+    await firstCapture;
+    assert.equal(env.badgeCalls.at(-1), '!');
+    assert.match(env.titleCalls.at(-1), /Select non-empty text/i);
+    assert.equal(env.peekState().clips.length, 1);
+  });
+});
+
+test('failed sendResponse callback logs one sanitized diagnostic without retrying mutation', async () => {
+  const env = await bootWorker();
+  await env.withCapturedConsole(async () => {
+    await env.listeners.onInstalled();
+    const beforeErrors = env.consoleErrors.length;
+    const revBefore = env.peekState().revision;
+
+    let callbackCalls = 0;
+    const keepOpen = env.listeners.onMessage(
+      {
+        protocolVersion: 1,
+        requestId: UUID_1,
+        type: 'UPDATE_SETTINGS',
+        expectedRevision: revBefore,
+        payload: { promptPrefix: 'New prefix', promptSuffix: '' },
+      },
+      { id: EXTENSION_ID, url: SIDEPANEL_URL },
+      () => {
+        callbackCalls += 1;
+        throw new Error('SENSITIVE_CHANNEL_CLOSED_PAYLOAD');
+      }
+    );
+    assert.equal(keepOpen, true);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(callbackCalls, 1);
+    assert.equal(env.peekState().revision, revBefore + 1);
+    const addedLogs = env.consoleErrors.slice(beforeErrors);
+    assert.equal(addedLogs.length, 1);
+    assert.equal(addedLogs[0], 'AI Clipper: could not deliver command response.');
+    assert.equal(addedLogs[0].includes('SENSITIVE_CHANNEL_CLOSED_PAYLOAD'), false);
   });
 });
