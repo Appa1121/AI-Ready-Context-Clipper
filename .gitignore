@@ -1,0 +1,17 @@
+node_modules/
+coverage/
+.cache/
+dist/
+artifacts/
+*.zip
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+browser-profile*/
+playwright-report/
+test-results/

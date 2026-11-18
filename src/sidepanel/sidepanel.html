@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI-Ready Context Clipper</title>
+    <link rel="stylesheet" href="sidepanel.css">
+    <script type="module" src="sidepanel.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">LOCAL-FIRST · FOUNDATION PREVIEW</p>
+        <h1>AI-Ready<br>Context Clipper</h1>
+        <p class="intro">พื้นที่รวบรวมบริบทสำหรับงานถัดไปของคุณ</p>
+      </header>
+      <section aria-labelledby="clips-heading">
+        <div class="section-heading">
+          <h2 id="clips-heading">ข้อความที่บันทึก</h2>
+          <span id="clip-count" aria-label="0 รายการ">0</span>
+        </div>
+        <div id="clip-list" class="empty-state">
+          <p class="empty-title">เริ่มจากข้อความที่มีความหมาย</p>
+          <p>เลือกข้อความบนหน้าเว็บ แล้วคลิกขวา → Save to AI Clipper</p>
+          <p class="notice">วิธีนี้จะพร้อมใช้ใน Milestone 2 — เวอร์ชันนี้ยังไม่บันทึกข้อความ</p>
+        </div>
+        <div class="actions">
+          <button id="copy-all" type="button" disabled>Copy as Markdown Prompt</button>
+          <button id="clear-all" type="button" class="secondary" disabled>Clear all</button>
+        </div>
+      </section>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true">กำลังเปิดแผง…</p>
+      <footer>ข้อมูลอยู่ในเครื่อง · ไม่มีบัญชีหรือ API key</footer>
+    </main>
+  </body>
+</html>
