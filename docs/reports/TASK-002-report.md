@@ -8,6 +8,8 @@ Date: 2026-11-18 (Asia/Bangkok)
 - Reviewer: Gemini Argon + Appa
 - Source base SHA (`main`): `5e0945f55e54bc6c38c2f581121f0f99380a03d2`
 - Task spec SHA (`docs/tasks/TASK-002.md`): `86cfaaba8b3c6d86e3d8875a93161647c53ca20a`
+- Issue: https://github.com/Appa1121/AI-Ready-Context-Clipper/issues/2
+- Draft PR: https://github.com/Appa1121/AI-Ready-Context-Clipper/pull/4
 - Contract version: `v1`
 
 ## Files actually read / inaccessible inputs
